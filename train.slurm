@@ -3,7 +3,7 @@
 #SBATCH -e slurm-%j.err
 #SBATCH -o slurm-%j.out
 
-cd /home/ig068321/MicroRTS-Py
+cd ~/MicroRTS-Py
 
 source .venv/bin/activate
 export JAVA_HOME=/usr/lib/jvm/jre/
