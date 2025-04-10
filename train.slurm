@@ -12,5 +12,5 @@ uv pip install -r requirements.txt
 pwd > .venv/lib/python3.9/site-packages/gym_microrts.pth
 python hello_world.py
 
-cd experiements
+cd experiments
 python ppo_gridnet.py --total-timesteps 10000000 --seed 1
