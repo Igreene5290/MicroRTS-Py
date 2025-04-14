@@ -416,50 +416,75 @@ def run_training():
     start_time = time.time()
     
     # Main training loop.
-    for update in range(1, args.total_timesteps // (args.num_steps * args.num_envs) + 1):
+    num_updates = args.total_timesteps // (args.num_steps * args.num_envs)
+    print(f"Total number of updates: {num_updates}")
+    
+    for update in range(1, num_updates + 1):
+        print(f"\nStarting update {update}/{num_updates}")
+        update_start_time = time.time()
+        
         # Optionally anneal learning rate.
         if args.anneal_lr:
-            frac = 1.0 - (update - 1.0) / (args.total_timesteps // (args.num_steps * args.num_envs))
+            frac = 1.0 - (update - 1.0) / num_updates
             lr_now = frac * args.learning_rate
             for opt in [critic_optimizer, actor_optimizer]:
                 opt.param_groups[0]["lr"] = lr_now
+            if args.auto_alpha:
+                alpha_optimizer.param_groups[0]["lr"] = lr_now
         
         # Experience collection.
+        print(f"Starting experience collection for update {update}...")
         for step in range(args.num_steps):
+            if step % 10 == 0:
+                print(f"Step {step}/{args.num_steps} of update {update}")
+            
             global_step += args.num_envs
-            invalid_action_masks = torch.tensor(np.array(envs.get_action_mask())).to(device)
-            obs_tensor = torch.FloatTensor(obs).to(device)
-            with torch.no_grad():
-                action, log_prob, entropy, q_value, _, _ = agent.get_action_and_value(obs_tensor, invalid_action_masks)
-            actions_np = action.cpu().numpy()
-            next_obs, rewards, dones, infos = envs.step(actions_np.reshape(envs.num_envs, -1))
-            # Add transitions to replay buffer.
-            for i in range(args.num_envs):
-                rb.add(
-                    obs[i],
-                    actions_np[i],
-                    rewards[i] * args.reward_scale,
-                    next_obs[i],
-                    dones[i],
-                    invalid_action_masks[i].cpu().numpy().flatten(),
-                    np.array(envs.get_action_mask()[i]).flatten()
-                )
-            obs = next_obs
-            # Log episodic returns.
-            for info in infos:
-                if "episode" in info:
-                    print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-                    writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                    writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
-                    break
+            try:
+                invalid_action_masks = torch.tensor(np.array(envs.get_action_mask())).to(device)
+                obs_tensor = torch.FloatTensor(obs).to(device)
+                with torch.no_grad():
+                    action, log_prob, entropy, q_value, _, _ = agent.get_action_and_value(obs_tensor, invalid_action_masks)
+                actions_np = action.cpu().numpy()
+                next_obs, rewards, dones, infos = envs.step(actions_np.reshape(envs.num_envs, -1))
+                
+                # Add transitions to replay buffer.
+                for i in range(args.num_envs):
+                    rb.add(
+                        obs[i],
+                        actions_np[i],
+                        rewards[i] * args.reward_scale,
+                        next_obs[i],
+                        dones[i],
+                        invalid_action_masks[i].cpu().numpy().flatten(),
+                        np.array(envs.get_action_mask()[i]).flatten()
+                    )
+                obs = next_obs
+                
+                # Log episodic returns.
+                for info in infos:
+                    if "episode" in info:
+                        print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
+                        writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
+                        writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                        break
+            except Exception as e:
+                print(f"Error during step {step}: {str(e)}")
+                raise
+        
+        print(f"Experience collection complete for update {update}")
         
         # SAC update loop.
         if rb.size > args.batch_size:
+            print(f"Starting SAC updates for update {update}...")
             cum_qf1_loss = 0
             cum_qf2_loss = 0
             cum_actor_loss = 0
             cum_alpha_loss = 0
-            for _ in range(args.num_steps):
+            
+            for update_step in range(args.num_steps):
+                if update_step % 10 == 0:
+                    print(f"SAC update step {update_step}/{args.num_steps}")
+                
                 try:
                     observations, actions, rewards, next_observations, dones, iam, next_iam = rb.sample(args.batch_size)
                     # Reshape masks to (batch_size, mapsize, -1)
@@ -516,29 +541,35 @@ def run_training():
                     for param, target_param in zip(agent.qf2.parameters(), agent.qf2_target.parameters()):
                         target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
                 except Exception as e:
-                    print(f"Error during update: {e}")
-                    continue
+                    print(f"Error during SAC update step {update_step}: {str(e)}")
+                    raise
             
             avg_qf1_loss = cum_qf1_loss / args.num_steps
             avg_qf2_loss = cum_qf2_loss / args.num_steps
             avg_actor_loss = cum_actor_loss / args.num_steps
             critic_loss_avg = avg_qf1_loss + avg_qf2_loss
+            
+            print(f"Update {update} complete. Losses - QF1: {avg_qf1_loss:.4f}, QF2: {avg_qf2_loss:.4f}, Actor: {avg_actor_loss:.4f}")
+            if args.auto_alpha:
+                avg_alpha_loss = cum_alpha_loss / args.num_steps
+                print(f"Alpha loss: {avg_alpha_loss:.4f}, Alpha value: {alpha:.4f}")
+            
             writer.add_scalar("loss/qf1", avg_qf1_loss, global_step)
             writer.add_scalar("loss/qf2", avg_qf2_loss, global_step)
             writer.add_scalar("loss/critic", critic_loss_avg, global_step)
             writer.add_scalar("loss/actor", avg_actor_loss, global_step)
             if args.auto_alpha:
-                avg_alpha_loss = cum_alpha_loss / args.num_steps
                 writer.add_scalar("loss/alpha", avg_alpha_loss, global_step)
                 writer.add_scalar("charts/alpha", alpha, global_step)
             writer.add_scalar("charts/learning_rate", actor_optimizer.param_groups[0]["lr"], global_step)
-            print(f"Update {update}: Global Steps = {global_step}, Critic Loss = {critic_loss_avg:.4f}, Actor Loss = {avg_actor_loss:.4f}")
         
+        update_time = time.time() - update_start_time
+        print(f"Update {update} took {update_time:.2f} seconds")
         writer.add_scalar("charts/sps", int(global_step / (time.time() - start_time)), global_step)
-        print("SPS:", int(global_step / (time.time() - start_time)))
         
         # Save model checkpoint periodically.
         if update % args.save_frequency == 0:
+            print(f"Saving checkpoint for update {update}...")
             checkpoint_path = f"models/{run_name}/{global_step}.pt"
             os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
             torch.save({
@@ -551,7 +582,7 @@ def run_training():
                 'update': update,
                 'global_step': global_step,
             }, checkpoint_path)
-            print(f"Model checkpoint saved at {checkpoint_path}")
+            print(f"Checkpoint saved to {checkpoint_path}")
     
     total_time = time.time() - start_time
     print(f"Total training time: {total_time:.2f} seconds")
