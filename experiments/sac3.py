@@ -381,6 +381,27 @@ def run_training():
     critic_optimizer = optim.Adam(critic_params, lr=args.learning_rate)
     actor_optimizer = optim.Adam(agent.actor.parameters(), lr=args.learning_rate)
     
+    # Enable gradient clipping
+    max_grad_norm = 1.0
+    
+    # Automatic entropy tuning
+    if args.auto_alpha:
+        print("Setting up automatic entropy tuning...")
+        target_entropy = -np.prod(action_shape) * args.target_entropy_scale
+        log_alpha = torch.zeros(1, requires_grad=True, device=device)
+        alpha = log_alpha.exp().item()
+        alpha_optimizer = optim.Adam([log_alpha], lr=args.learning_rate)
+    else:
+        print("Using fixed alpha value...")
+        alpha = args.alpha
+    
+    # (Optional) Evaluation executor
+    eval_executor = None
+    if args.max_eval_workers > 0:
+        print("Setting up evaluation executor...")
+        from concurrent.futures import ThreadPoolExecutor
+        eval_executor = ThreadPoolExecutor(max_workers=args.max_eval_workers, thread_name_prefix="league-eval-")
+    
     print("Model's state_dict:")
     for param_tensor in agent.state_dict():
         print(param_tensor, "\t", agent.state_dict()[param_tensor].size())
