@@ -344,6 +344,25 @@ def run_training():
     
     print("Setting up environment...")
     try:
+        # Check Java environment
+        import subprocess
+        print("Checking Java environment...")
+        java_version = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT)
+        print(f"Java version:\n{java_version.decode()}")
+        
+        # Pre-compile Java classes
+        print("Pre-compiling Java classes...")
+        microrts_path = os.path.join(gym_microrts.__path__[0], "microrts")
+        javac_cmd = ['javac', '-Xlint:deprecation', '-Xlint:unchecked', 
+                    '-d', microrts_path, 
+                    os.path.join(microrts_path, '*.java')]
+        try:
+            subprocess.run(javac_cmd, check=True)
+            print("Java classes compiled successfully")
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: Java compilation failed: {e}")
+            print("Continuing anyway, but this might cause performance issues")
+        
         # Add timeout for Java initialization
         import signal
         def timeout_handler(signum, frame):
@@ -353,6 +372,7 @@ def run_training():
         signal.signal(signal.SIGALRM, timeout_handler)
         signal.alarm(300)  # 5 minutes timeout
         
+        print("Initializing MicroRTS environment...")
         envs = MicroRTSGridModeVecEnv(
             num_selfplay_envs=args.num_selfplay_envs,
             num_bot_envs=args.num_bot_envs,
