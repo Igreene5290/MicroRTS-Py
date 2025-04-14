@@ -342,28 +342,65 @@ def run_training():
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     print(f"Using device: {device}")
     
-    print("Initializing environment...")
-    envs = MicroRTSGridModeVecEnv(
-        num_selfplay_envs=args.num_selfplay_envs,
-        num_bot_envs=args.num_bot_envs,
-        partial_obs=args.partial_obs,
-        max_steps=2000,
-        render_theme=2,
-        ai2s=[microrts_ai.coacAI for _ in range(args.num_bot_envs - 6)]
-             + [microrts_ai.randomBiasedAI for _ in range(min(args.num_bot_envs, 2))]
-             + [microrts_ai.lightRushAI for _ in range(min(args.num_bot_envs, 2))]
-             + [microrts_ai.workerRushAI for _ in range(min(args.num_bot_envs, 2))],
-        map_paths=args.train_maps,
-        reward_weight=np.array(args.reward_weight),
-        cycle_maps=args.train_maps,
-    )
-    print("Environment initialized, wrapping with stats recorder...")
+    print("Setting up environment...")
+    try:
+        # Add timeout for Java initialization
+        import signal
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Java environment initialization timed out")
+        
+        # Set timeout to 5 minutes
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(300)  # 5 minutes timeout
+        
+        envs = MicroRTSGridModeVecEnv(
+            num_selfplay_envs=args.num_selfplay_envs,
+            num_bot_envs=args.num_bot_envs,
+            partial_obs=args.partial_obs,
+            max_steps=2000,
+            render_theme=2,
+            ai2s=[microrts_ai.coacAI for _ in range(args.num_bot_envs - 6)]
+                 + [microrts_ai.randomBiasedAI for _ in range(min(args.num_bot_envs, 2))]
+                 + [microrts_ai.lightRushAI for _ in range(min(args.num_bot_envs, 2))]
+                 + [microrts_ai.workerRushAI for _ in range(min(args.num_bot_envs, 2))],
+            map_paths=args.train_maps,
+            reward_weight=np.array(args.reward_weight),
+            cycle_maps=args.train_maps,
+        )
+        
+        # Disable timeout after successful initialization
+        signal.alarm(0)
+        
+        print("Java environment initialized successfully")
+    except TimeoutError:
+        print("ERROR: Java environment initialization timed out after 5 minutes")
+        print("This could be due to:")
+        print("1. Insufficient memory")
+        print("2. Slow filesystem access")
+        print("3. Java configuration issues")
+        print("Please check your system resources and Java configuration")
+        raise
+    except Exception as e:
+        print(f"ERROR: Failed to initialize Java environment: {str(e)}")
+        raise
+    
+    print("Wrapping environment with stats recorder...")
     envs = MicroRTSStatsRecorder(envs, args.gamma)
     envs = VecMonitor(envs)
+    
     if args.capture_video:
         print("Setting up video recording...")
         envs = VecVideoRecorder(envs, f"videos/{run_name}", 
                                 record_video_trigger=lambda x: x % 100000 == 0, video_length=2000)
+    
+    # Test environment initialization
+    print("Testing environment initialization...")
+    try:
+        obs = envs.reset()
+        print("Environment reset successful")
+    except Exception as e:
+        print(f"ERROR: Environment reset failed: {str(e)}")
+        raise
     
     print("Defining shapes and initializing replay buffer...")
     mapsize = 16 * 16
