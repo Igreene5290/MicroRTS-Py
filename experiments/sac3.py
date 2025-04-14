@@ -344,35 +344,7 @@ def run_training():
     
     print("Setting up environment...")
     try:
-        # Check Java environment
-        import subprocess
-        print("Checking Java environment...")
-        java_version = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT)
-        print(f"Java version:\n{java_version.decode()}")
-        
-        # Pre-compile Java classes
-        print("Pre-compiling Java classes...")
-        microrts_path = os.path.join(gym_microrts.__path__[0], "microrts")
-        javac_cmd = ['javac', '-Xlint:deprecation', '-Xlint:unchecked', 
-                    '-d', microrts_path, 
-                    os.path.join(microrts_path, '*.java')]
-        try:
-            subprocess.run(javac_cmd, check=True)
-            print("Java classes compiled successfully")
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: Java compilation failed: {e}")
-            print("Continuing anyway, but this might cause performance issues")
-        
-        # Add timeout for Java initialization
-        import signal
-        def timeout_handler(signum, frame):
-            raise TimeoutError("Java environment initialization timed out")
-        
-        # Set timeout to 5 minutes
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(300)  # 5 minutes timeout
-        
-        print("Initializing MicroRTS environment...")
+        # Initialize environment directly like in PPO
         envs = MicroRTSGridModeVecEnv(
             num_selfplay_envs=args.num_selfplay_envs,
             num_bot_envs=args.num_bot_envs,
@@ -388,20 +360,9 @@ def run_training():
             cycle_maps=args.train_maps,
         )
         
-        # Disable timeout after successful initialization
-        signal.alarm(0)
-        
-        print("Java environment initialized successfully")
-    except TimeoutError:
-        print("ERROR: Java environment initialization timed out after 5 minutes")
-        print("This could be due to:")
-        print("1. Insufficient memory")
-        print("2. Slow filesystem access")
-        print("3. Java configuration issues")
-        print("Please check your system resources and Java configuration")
-        raise
+        print("Environment initialized successfully")
     except Exception as e:
-        print(f"ERROR: Failed to initialize Java environment: {str(e)}")
+        print(f"ERROR: Failed to initialize environment: {str(e)}")
         raise
     
     print("Wrapping environment with stats recorder...")
