@@ -311,8 +311,13 @@ class ReplayBuffer:
 # --------------------- SAC Training Loop ---------------------
 def run_training():
     args = parse_args()
+    print("Starting training with arguments:", vars(args))
+    
     run_name = f"{args.gym_id}__{args.exp_name}__{args.seed}__{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    print(f"Run name: {run_name}")
+    
     if args.prod_mode:
+        print("Initializing wandb...")
         import wandb
         wandb.init(
             project=args.wandb_project_name,
@@ -322,11 +327,13 @@ def run_training():
             monitor_gym=True,
             save_code=True,
         )
+    
+    print("Setting up tensorboard writer...")
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text("hyperparameters", 
                     "|param|value|\n|-|-|\n" + "\n".join([f"|{k}|{v}|" for k, v in vars(args).items()]))
     
-    # Set seeds.
+    print("Setting random seeds...")
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -335,7 +342,7 @@ def run_training():
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     print(f"Using device: {device}")
     
-    # Set up environment.
+    print("Initializing environment...")
     envs = MicroRTSGridModeVecEnv(
         num_selfplay_envs=args.num_selfplay_envs,
         num_bot_envs=args.num_bot_envs,
@@ -350,50 +357,29 @@ def run_training():
         reward_weight=np.array(args.reward_weight),
         cycle_maps=args.train_maps,
     )
+    print("Environment initialized, wrapping with stats recorder...")
     envs = MicroRTSStatsRecorder(envs, args.gamma)
     envs = VecMonitor(envs)
     if args.capture_video:
+        print("Setting up video recording...")
         envs = VecVideoRecorder(envs, f"videos/{run_name}", 
                                 record_video_trigger=lambda x: x % 100000 == 0, video_length=2000)
     
-    # Define shapes.
+    print("Defining shapes and initializing replay buffer...")
     mapsize = 16 * 16
-    # For discrete actions: use len(nvec); for invalid masks use sum(nvec)
     action_shape = (mapsize, len(envs.action_plane_space.nvec))
     mask_size = mapsize * int(np.sum(envs.action_plane_space.nvec))
     
-    # Initialize replay buffer with smaller initial size
-    initial_buffer_size = min(args.buffer_size, 10000)  # Start with a smaller buffer
+    initial_buffer_size = min(args.buffer_size, 10000)
     rb = ReplayBuffer(initial_buffer_size, envs.observation_space.shape, action_shape, device, mask_size)
     
-    # Instantiate agent
+    print("Instantiating agent...")
     agent = Agent(envs, device, mapsize)
     
-    # Set up optimizers with gradient clipping
+    print("Setting up optimizers...")
     critic_params = list(agent.qf1.parameters()) + list(agent.qf2.parameters())
     critic_optimizer = optim.Adam(critic_params, lr=args.learning_rate)
     actor_optimizer = optim.Adam(agent.actor.parameters(), lr=args.learning_rate)
-    
-    # Enable gradient clipping
-    max_grad_norm = 1.0
-    
-    # Automatic entropy tuning
-    if args.auto_alpha:
-        target_entropy = -np.prod(action_shape) * args.target_entropy_scale
-        log_alpha = torch.zeros(1, requires_grad=True, device=device)
-        alpha = log_alpha.exp().item()
-        alpha_optimizer = optim.Adam([log_alpha], lr=args.learning_rate)
-    else:
-        alpha = args.alpha
-    
-    # (Optional) Evaluation executor.
-    eval_executor = None
-    if args.max_eval_workers > 0:
-        from concurrent.futures import ThreadPoolExecutor
-        eval_executor = ThreadPoolExecutor(max_workers=args.max_eval_workers, thread_name_prefix="league-eval-")
-    
-    # Number of updates.
-    num_updates = args.total_timesteps // (args.num_steps * args.num_envs)
     
     print("Model's state_dict:")
     for param_tensor in agent.state_dict():
@@ -401,20 +387,21 @@ def run_training():
     total_params = sum([param.nelement() for param in agent.parameters()])
     print("Model's total parameters:", total_params)
     
+    print("Resetting environment...")
     obs = envs.reset()
+    print("Environment reset complete, starting training loop...")
+    
     global_step = 0
     start_time = time.time()
     
     # Main training loop.
-    for update in range(1, num_updates + 1):
+    for update in range(1, args.total_timesteps // (args.num_steps * args.num_envs) + 1):
         # Optionally anneal learning rate.
         if args.anneal_lr:
-            frac = 1.0 - (update - 1.0) / num_updates
+            frac = 1.0 - (update - 1.0) / (args.total_timesteps // (args.num_steps * args.num_envs))
             lr_now = frac * args.learning_rate
             for opt in [critic_optimizer, actor_optimizer]:
                 opt.param_groups[0]["lr"] = lr_now
-            if args.auto_alpha:
-                alpha_optimizer.param_groups[0]["lr"] = lr_now
         
         # Experience collection.
         for step in range(args.num_steps):
@@ -547,7 +534,7 @@ def run_training():
     
     total_time = time.time() - start_time
     print(f"Total training time: {total_time:.2f} seconds")
-    print(f"Average time per update: {total_time/num_updates:.2f} seconds")
+    print(f"Average time per update: {total_time/(args.total_timesteps // (args.num_steps * args.num_envs)):.2f} seconds")
     
     final_path = f"models/{run_name}/final.pt"
     os.makedirs(os.path.dirname(final_path), exist_ok=True)
