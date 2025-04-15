@@ -13,4 +13,4 @@ pwd > .venv/lib/python3.9/site-packages/gym_microrts.pth
 python hello_world.py
 
 cd experiments
-python sac3.py
+python a2c2.py --total-timesteps 500000000
