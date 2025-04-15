@@ -5,7 +5,6 @@
 
 cd ~/MicroRTS-Py
 
-uv venv --python 3.9
 source .venv/bin/activate
 export JAVA_HOME=/usr/lib/jvm/jre/
 
