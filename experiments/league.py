@@ -87,6 +87,10 @@ if args.model_type == "ppo_gridnet_large":
     from ppo_gridnet_large import Agent, MicroRTSStatsRecorder
 
     from gym_microrts.envs.vec_env import MicroRTSBotVecEnv, MicroRTSGridModeVecEnv
+elif args.model_type == "a2c":
+    from a2c2 import Agent, MicroRTSStatsRecorder
+
+    from gym_microrts.envs.vec_env import MicroRTSBotVecEnv, MicroRTSGridModeVecEnv
 else:
     from ppo_gridnet import Agent, MicroRTSStatsRecorder
 
