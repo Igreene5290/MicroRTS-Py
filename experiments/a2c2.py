@@ -98,7 +98,7 @@ def parse_args():
     args.num_envs = args.num_selfplay_envs + args.num_bot_envs
     args.batch_size = int(args.num_envs * args.num_steps)
     args.num_updates = args.total_timesteps // args.batch_size
-    args.save_frequency = max(1, int(args.num_updates // (args.num_models * 32)))
+    args.save_frequency = max(1, int(args.num_updates // args.num_models))
     return args
 
 
