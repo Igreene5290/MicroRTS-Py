@@ -51,12 +51,12 @@ def parse_args():
         nargs='+',
         help="the path to the decision transformers to be ran in the tournament"
     )
-     parser.add_argument(
-         '--eval-map',
-         type=str,
-         default="maps/16x16/basesWorkers16x16A.xml",
-         help="the map to be used in the tournament"
-     )
+    parser.add_argument(
+        '--eval-map',
+        type=str,
+        default="maps/16x16/basesWorkers16x16A.xml",
+        help="the map to be used in the tournament"
+    )
 
     args = parser.parse_args()
     if not args.seed:
