@@ -47,10 +47,10 @@ def parse_args():
         help="the ais to be ran in the tournament"
     )
     parser.add_argument(
-         '--dts',
-         nargs='+',
-         help="the path to the decision transformers to be ran in the tournament"
-     )
+        '--dts',
+        nargs='+',
+        help="the path to the decision transformers to be ran in the tournament"
+    )
      parser.add_argument(
          '--eval-map',
          type=str,
