@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument(
         '--dt-dataset',
         type=str,
-        default="episode_data/cm-mcrp-dataset-v2/save_0",
+        default="episode_data/cm-mcrp-dataset-v2/cm-mcrp-dataset-v2/save_0",
         help='the path to the decision transformer dataset'
     )
 
