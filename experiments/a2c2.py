@@ -14,6 +14,7 @@ import sys
 import time
 import subprocess
 import wandb
+from collections import deque
 from distutils.util import strtobool
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
@@ -93,6 +94,10 @@ def parse_args():
                         help='Number of self-play environments')
     parser.add_argument('--train-maps', nargs='+', default=["maps/16x16/basesWorkers16x16A.xml"],
                         help='Training maps')
+    # ACER-specific arguments:
+    parser.add_argument('--acer-buffer-size', type=int, default=10000, help='ACER replay buffer max size')
+    parser.add_argument('--acer-batch-size', type=int, default=256, help='ACER minibatch size')
+    parser.add_argument('--acer-rho-clip', type=float, default=10.0, help='ACER importance weight clip')
 
     args = parser.parse_args()
     args.num_envs = args.num_selfplay_envs + args.num_bot_envs
@@ -416,6 +421,9 @@ def train():
     total_params = sum([param.nelement() for param in agent.parameters()])
     print("Model's total parameters:", total_params)
 
+    # Initialize ACER replay buffer
+    replay_buffer = deque(maxlen=args.acer_buffer_size)
+
     global_step = 0
     start_time = time.time()
     next_obs = torch.Tensor(envs.reset()).to(device)
@@ -458,6 +466,17 @@ def train():
             global_step += num_envs
             next_obs = torch.Tensor(next_obs_np).to(device)
             next_done = torch.Tensor(done).to(device)
+            # Store each env's transition separately
+            for i in range(num_envs):
+                replay_buffer.append((
+                    obs_list[-1][i].cpu(),      # shape [H, W, C]
+                    action[i].cpu(),            # shape [...]
+                    logp[i].cpu(),              # scalar
+                    rewards_list[-1][i].cpu(),  # scalar
+                    dones_list[-1][i].cpu(),    # scalar
+                    next_obs[i].cpu(),          # shape [H, W, C]
+                    invalid_action_masks[i].cpu()  # shape [mask_dim]
+                ))
             for info in infos:
                 if "episode" in info:
                     print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
@@ -500,10 +519,50 @@ def train():
         entropy_loss = - rollout_logprobs.mean()
         total_loss = policy_loss + args.vf_coef * value_loss - args.ent_coef * entropy_loss
 
+
+        if args.lr_decay: scheduler.step()
+
+        # ——— single combined A2C + ACER update ———
         optimizer.zero_grad()
-        total_loss.backward()
+
+        # start with the on‑policy A2C loss
+        combined_loss = total_loss
+
+        # add ACER off‑policy loss if we have enough samples
+        if len(replay_buffer) >= args.acer_batch_size:
+            batch = random.sample(replay_buffer, args.acer_batch_size)
+            s_b, a_b, old_lp_b, r_b, d_b, s2_b, m_b = zip(*batch)
+            s_b      = torch.stack(s_b).to(device)
+            a_b      = torch.stack(a_b).to(device)
+            old_lp_b = torch.stack(old_lp_b).to(device)
+            m_b      = torch.stack(m_b).to(device)
+            d_b      = torch.stack(d_b).to(device)
+            r_b      = torch.stack(r_b).to(device)
+            s2_b     = torch.stack(s2_b).to(device)
+
+            _, new_lp, _, _, val_b = agent.get_action_and_value(
+                s_b, action=a_b, invalid_action_masks=m_b, envs=envs, device=device
+            )
+            rho     = torch.exp(new_lp - old_lp_b)
+            rho_bar = torch.clamp(rho, max=args.acer_rho_clip)
+            with torch.no_grad():
+                next_val_b = agent.get_value(s2_b).squeeze()
+            adv_b       = r_b + args.gamma * next_val_b * (1 - d_b) - val_b.detach()
+            acer_policy = -(rho_bar * new_lp * adv_b).mean()
+            acer_value  = adv_b.pow(2).mean()
+            acer_loss   = acer_policy + args.vf_coef * acer_value
+
+            combined_loss = combined_loss + acer_loss
+            writer.add_scalar("loss/acer", acer_loss.item(), global_step)
+
+        # now do exactly one backward + step
+        combined_loss.backward()
         nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
         optimizer.step()
+        # ——————————————————————————————
+
+
+
 
         writer.add_scalar("loss/policy", policy_loss.item(), global_step)
         writer.add_scalar("loss/value", value_loss.item(), global_step)
@@ -511,6 +570,9 @@ def train():
         writer.add_scalar("loss/total", total_loss.item(), global_step)
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("charts/sps", int(global_step / (time.time() - start_time)), global_step)
+        # after computing acer_loss:
+        writer.add_scalar("acer/offpolicy_loss", acer_loss.item(), global_step)
+
         print(f"Update {update}: Global Steps: {global_step}, Total Loss: {total_loss.item():.4f}")
 
         # -----------------------------------------------------
@@ -521,7 +583,7 @@ def train():
             torch.save(agent.state_dict(), f"models/{experiment_name}/agent.pt")
             torch.save(agent.state_dict(), f"models/{experiment_name}/{global_step}.pt")
             print(f"Model checkpoint saved at {model_path}")
-            if eval_executor is not None:
+            if global_step % args.eval_frequency == 0 and eval_executor is not None:
                 future = eval_executor.submit(
                     run_evaluation,
                     f"models/{experiment_name}/{global_step}.pt",
