@@ -18,5 +18,5 @@ python a2c2.py \
   --num-steps 128 \                
   --acer-buffer-size 2000 \        
   --acer-batch-size 128 \         
-  --total-timesteps 10000000
+  --total-timesteps 10000000 \
   --cuda True
