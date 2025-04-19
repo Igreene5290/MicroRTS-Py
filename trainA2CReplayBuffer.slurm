@@ -14,11 +14,9 @@ python hello_world.py
 
 cd experiments
 python a2c2.py \
-  --total-timesteps 50000000 \
-  --learning-rate 2.5e-4 \
-  --num-steps 512 \
-  --gamma 0.99 \
-  --ent-coef 0.1 \
-  --reward-weight 10.0 1.0 1.0 2.0 1.0 4.0 \
-  --num-selfplay-envs 32 \
+  --num-selfplay-envs 4 \         
+  --num-steps 128 \                
+  --acer-buffer-size 2000 \        
+  --acer-batch-size 128 \         
+  --total-timesteps 10000000
   --cuda True
