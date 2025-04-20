@@ -141,7 +141,7 @@ if __name__ == "__main__":
     mapsize = 16 * 16
 
     # variables for decision transformer
-    if args.dt:
+    if args.dts:
         TARGET_RETURN = 10
         dataset = DatasetDict.load_from_disk(args.dt_dataset)
         collector = DecisionTransformerGymDataCollator(dataset["train"])
