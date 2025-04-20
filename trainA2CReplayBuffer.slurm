@@ -13,4 +13,13 @@ pwd > .venv/lib/python3.9/site-packages/gym_microrts.pth
 python hello_world.py
 
 cd experiments
-python a2c2.py --num-selfplay-envs 4 --num-steps 128 --acer-buffer-size 2000 --acer-batch-size 128 --total-timesteps 10000000 --cuda True
+python a2c2.py \
+  --prod-mode True \
+  --wandb-project-name microrts-acer-test \
+  --num-selfplay-envs 32 \
+  --num-steps 256 \
+  --learning-rate 7e-4 \
+  --ent-coef 0.01 \
+  --acer-buffer-size 20000 \
+  --acer-batch-size 512 \
+  --acer-rho-clip 10.0
