@@ -597,7 +597,7 @@ def train():
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("charts/sps", int(global_step / (time.time() - start_time)), global_step)
         # after computing acer_loss:
-        if len(replay_buffer) >= args.acer_batch_size:
+        if update > WARMUP_UPDATES and len(replay_buffer) >= args.acer_batch_size:
             writer.add_scalar("acer/offpolicy_loss", acer_loss.item(), global_step)
 
         print(f"Update {update}: Global Steps: {global_step}, Total Loss: {total_loss.item():.4f}")
