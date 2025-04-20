@@ -346,7 +346,7 @@ def train():
     args = parse_args()
     print(f"Save frequency: {args.save_frequency}")
 
-    WARUMUP_UPDATES = 10
+    WARMUP_UPDATES = 10
 
 
     experiment_name = f"{args.gym_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
