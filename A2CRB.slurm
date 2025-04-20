@@ -16,7 +16,7 @@ cd experiments
 python a2c2.py \
   --prod-mode True \
   --wandb-project-name microrts-acer-explore \
-  --wandb-entity your_wandb_username \
+  --wandb-entity igreene5290-ohio-university \
   --num-selfplay-envs 64 \
   --num-bot-envs 0 \
   --num-steps 256 \
