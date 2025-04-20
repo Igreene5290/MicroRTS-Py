@@ -346,7 +346,7 @@ def train():
     args = parse_args()
     print(f"Save frequency: {args.save_frequency}")
 
-    
+    WARUMUP_UPDATES = 10
 
 
     experiment_name = f"{args.gym_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
@@ -461,6 +461,7 @@ def train():
         obs_list = []
         actions_list = []
         logprobs_list = []
+        entropy_list = []
         values_list = []
         rewards_list = []
         dones_list = []
@@ -472,6 +473,7 @@ def train():
             )
             actions_list.append(action)
             logprobs_list.append(logp)
+            entropy_list.append(entropy)
             values_list.append(value)
             action_np = action.cpu().numpy()
             next_obs_np, reward, done, infos = envs.step(action_np.reshape(num_envs, -1))
@@ -508,10 +510,16 @@ def train():
             next_value = agent.get_value(next_obs).squeeze()
         # Stack rollout.
         rollout_obs = torch.stack(obs_list)                # (num_steps, num_envs, H, W, C)
-        rollout_logprobs = torch.stack(logprobs_list)        # (num_steps, num_envs)
+        rollout_logprobs = torch.stack(logprobs_list).view(-1)       # (num_steps, num_envs)
+        rollout_entropy = torch.stack(entropy_list).view(-1)
         rollout_values = torch.stack(values_list).squeeze()  # (num_steps, num_envs)
         rollout_rewards = torch.stack(rewards_list)          # (num_steps, num_envs)
         rollout_dones = torch.stack(dones_list)              # (num_steps, num_envs)
+
+        # log actual policy entropy
+        writer.add_scalar("stats/entropy", rollout_entropy.mean().item(), global_step)
+        if args.prod_mode:
+            wandb.log({"stats/entropy": rollout_entropy.mean().item()}, step=global_step)
 
         # Compute advantages using GAE.
         returns = torch.zeros_like(rollout_rewards)
@@ -535,7 +543,7 @@ def train():
 
         policy_loss = -(flat_logprobs * flat_advantages.detach()).mean()
         value_loss = ((flat_returns - flat_values) ** 2).mean()
-        entropy_loss = - rollout_logprobs.mean()
+        entropy_loss = - rollout_entropy.mean()
         total_loss = policy_loss + args.vf_coef * value_loss - args.ent_coef * entropy_loss
 
 
@@ -547,8 +555,8 @@ def train():
         # start with the on‑policy A2C loss
         combined_loss = total_loss
 
-        # add ACER off‑policy loss if we have enough samples
-        if len(replay_buffer) >= args.acer_batch_size:
+        # add ACER off‑policy loss *only after* warm‑up **and** if buffer is ready
+        if update > WARMUP_UPDATES and len(replay_buffer) >= args.acer_batch_size:
             batch = random.sample(replay_buffer, args.acer_batch_size)
             s_b, a_b, old_lp_b, r_b, d_b, s2_b, m_b = zip(*batch)
             s_b      = torch.stack(s_b).to(device)
