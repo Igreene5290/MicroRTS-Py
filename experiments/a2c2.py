@@ -496,6 +496,11 @@ def train():
                     print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
                     writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                     writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                    if args.prod_mode:
+                        wandb.log({
+                            "charts/episodic_return": r,
+                            "charts/episodic_length": l
+                        }, step=global_step)
                     break
 
         # Compute bootstrap value.
@@ -629,6 +634,8 @@ def train():
     print(f"Final model saved at {final_model_path}")
     
     writer.close()
+    if args.prod_mode:
+       wandb.finish()
     envs.close()
     if eval_executor is not None:
         eval_executor.shutdown(wait=True, cancel_futures=False)
