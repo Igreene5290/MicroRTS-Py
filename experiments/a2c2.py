@@ -587,7 +587,17 @@ def train():
         optimizer.step()
         # ——————————————————————————————
 
+        log_data = {
+            "loss/policy":    policy_loss.item(),
+            "loss/value":     value_loss.item(),
+            "loss/entropy":   entropy_loss.item(),
+            "loss/total":     total_loss.item(),
+            "learning_rate":  optimizer.param_groups[0]["lr"],
+            "sps":            int(global_step / (time.time() - start_time)),
+        }
 
+        if update > WARMUP_UPDATES and len(replay_buffer) >= args.acer_batch_size:
+            log_data["loss/acer"] = acer_loss.item()
 
 
         writer.add_scalar("loss/policy", policy_loss.item(), global_step)
@@ -596,20 +606,14 @@ def train():
         writer.add_scalar("loss/total", total_loss.item(), global_step)
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("charts/sps", int(global_step / (time.time() - start_time)), global_step)
-    
+        if update > WARMUP_UPDATES and len(replay_buffer) >= args.acer_batch_size:
+            writer.add_scalar("acer/offpolicy_loss", acer_loss.item(), global_step)
+
 
         print(f"Update {update}: Global Steps: {global_step}, Total Loss: {total_loss.item():.4f}")
 
-        wandb.log({
-            "loss/policy":    policy_loss.item(),
-            "loss/value":     value_loss.item(),
-            "loss/entropy":   entropy_loss.item(),
-            "loss/total":     total_loss.item(),
-            "learning_rate":  optimizer.param_groups[0]["lr"],
-            "sps":            int(global_step / (time.time() - start_time)),
-            # only log acer when available:
-            **({"loss/acer": acer_loss.item()} if len(replay_buffer) >= args.acer_batch_size else {})
-        }, step=global_step)
+        if args.prod_mode:
+            wandb.log(log_data, step=global_step)
 
 
         # -----------------------------------------------------
