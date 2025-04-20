@@ -14,11 +14,11 @@ python hello_world.py
 
 cd experiments
 python a2c2.py \
+  --cuda True \
   --prod-mode True \
-  --wandb-project-name microrts-acer-explore \
-  --wandb-entity igreene5290-ohio-university \
+  --wandb-project-name A2C-ACER-Explore \
   --num-selfplay-envs 64 \
-  --num-bot-envs 0 \
+  --num-bot-envs 4 \
   --num-steps 256 \
   --learning-rate 3e-4 \
   --ent-coef 0.05 \
