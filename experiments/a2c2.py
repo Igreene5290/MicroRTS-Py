@@ -346,6 +346,9 @@ def train():
     args = parse_args()
     print(f"Save frequency: {args.save_frequency}")
 
+    
+
+
     experiment_name = f"{args.gym_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     writer = SummaryWriter(log_dir=f"runs/{experiment_name}")
 
@@ -397,6 +400,17 @@ def train():
 
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    if args.prod_mode:
+        # ——— Initialize WandB ———
+        wandb.init(
+            project=args.wandb_project_name,
+            entity=args.wandb_entity,
+            name=f"{args.exp_name}__{args.seed}",
+            config=vars(args),             # save all args as hyperparameters
+            reinit=True
+        )
+        wandb.watch(agent, log="all", log_freq=100)
 
     # Set up learning rate decay if enabled.
     if args.lr_decay:
@@ -469,13 +483,13 @@ def train():
             # Store each env's transition separately
             for i in range(num_envs):
                 replay_buffer.append((
-                    obs_list[-1][i].cpu(),      # shape [H, W, C]
-                    action[i].cpu(),            # shape [...]
-                    logp[i].cpu(),              # scalar
-                    rewards_list[-1][i].cpu(),  # scalar
-                    dones_list[-1][i].cpu(),    # scalar
-                    next_obs[i].cpu(),          # shape [H, W, C]
-                    invalid_action_masks[i].cpu()  # shape [mask_dim]
+                    obs_list[-1][i].detach().cpu(),
+                    action[i].detach().cpu(),
+                    logp[i].detach().cpu(),
+                    rewards_list[-1][i].cpu(),
+                    dones_list[-1][i].cpu(),
+                    next_obs[i].cpu(),
+                    invalid_action_masks[i].cpu()
                 ))
             for info in infos:
                 if "episode" in info:
@@ -555,7 +569,6 @@ def train():
             combined_loss = combined_loss + acer_loss
             writer.add_scalar("loss/acer", acer_loss.item(), global_step)
 
-        # now do exactly one backward + step
         combined_loss.backward()
         nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
         optimizer.step()
@@ -571,9 +584,22 @@ def train():
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("charts/sps", int(global_step / (time.time() - start_time)), global_step)
         # after computing acer_loss:
-        writer.add_scalar("acer/offpolicy_loss", acer_loss.item(), global_step)
+        if len(replay_buffer) >= args.acer_batch_size:
+            writer.add_scalar("acer/offpolicy_loss", acer_loss.item(), global_step)
 
         print(f"Update {update}: Global Steps: {global_step}, Total Loss: {total_loss.item():.4f}")
+
+        wandb.log({
+            "loss/policy":    policy_loss.item(),
+            "loss/value":     value_loss.item(),
+            "loss/entropy":   entropy_loss.item(),
+            "loss/total":     total_loss.item(),
+            "learning_rate":  optimizer.param_groups[0]["lr"],
+            "sps":            int(global_step / (time.time() - start_time)),
+            # only log acer when available:
+            **({"loss/acer": acer_loss.item()} if len(replay_buffer) >= args.acer_batch_size else {})
+        }, step=global_step)
+
 
         # -----------------------------------------------------
 
