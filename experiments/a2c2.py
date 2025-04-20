@@ -498,8 +498,8 @@ def train():
                     writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
                     if args.prod_mode:
                         wandb.log({
-                            "charts/episodic_return": r,
-                            "charts/episodic_length": l
+                            "charts/episodic_return": info["episode"]["r"],
+                            "charts/episodic_length": info["episode"]["l"]
                         }, step=global_step)
                     break
 
