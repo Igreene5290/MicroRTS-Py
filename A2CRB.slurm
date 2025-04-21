@@ -21,18 +21,15 @@ python a2c2.py \
   --num-bot-envs 4 \
   --num-steps 1024 \
   --learning-rate 5e-5 \
-  --lr-schedule linear \
   --ent-coef 0.005 \
-  --ent-coef-anneal True \
-  --ent-coef-final 0.0005 \
   --gamma 0.995 \
   --gae-lambda 0.9 \
-  --normalize-advantages True \
+  --normalize-advantage True \
   --normalize-returns False \
   --acer-buffer-size 50000 \
   --acer-batch-size 4096 \
   --acer-rho-clip 1.0 \
   --reward-weight 10.0 1.0 1.0 0.2 1.0 1.0 \
-  --total-timesteps 100000000 \
+  --total-timesteps 1e8 \
   --capture-video False
 
