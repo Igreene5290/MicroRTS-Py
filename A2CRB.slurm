@@ -16,20 +16,23 @@ cd experiments
 python a2c2.py \
   --cuda True \
   --prod-mode True \
-  --wandb-project-name A2C-Tune1 \
-  --num-selfplay-envs 128 \
+  --wandb-project-name A2C-Tune2 \
+  --num-selfplay-envs 256 \
   --num-bot-envs 4 \
-  --num-steps 512 \
-  --learning-rate 1e-4 \
-  --ent-coef 0.01 \
+  --num-steps 1024 \
+  --learning-rate 5e-5 \
+  --lr-schedule linear \
+  --ent-coef 0.005 \
+  --ent-coef-anneal True \
+  --ent-coef-final 0.0005 \
   --gamma 0.995 \
   --gae-lambda 0.9 \
   --normalize-advantages True \
   --normalize-returns False \
   --acer-buffer-size 50000 \
   --acer-batch-size 4096 \
-  --acer-rho-clip 3.0 \
+  --acer-rho-clip 1.0 \
   --reward-weight 10.0 1.0 1.0 0.2 1.0 1.0 \
-  --total-timesteps 1e8 \
+  --total-timesteps 100000000 \
   --capture-video False
 
